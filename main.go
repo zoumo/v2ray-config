@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	vmessPort = 443
+	vmessPort     = 443
+	localHTTPPort = 1087
 )
 
 // Config ...
@@ -43,6 +44,7 @@ type SystemPolicy struct {
 }
 
 type Inbound struct {
+	Listen         string          `json:"listen,omitempty" bson:"listen,omitempty"`
 	Protocol       string          `json:"protocol,omitempty" bson:"protocol,omitempty"`
 	Port           int             `json:"port,omitempty" bson:"port,omitempty"`
 	Tag            string          `json:"tag,omitempty" bson:"tag,omitempty"`
@@ -96,11 +98,11 @@ type KCPConfig struct {
 }
 
 type Routing struct {
-	Rules     []RoutingRules    `json:"rules"`
+	Rules     []RoutingRule     `json:"rules"`
 	Balancers []RoutingBalancer `json:"balancers"`
 }
 
-type RoutingRules struct {
+type RoutingRule struct {
 	Type        string   `json:"type,omitempty" bson:"type,omitempty"`
 	Network     string   `json:"network,omitempty" bson:"network,omitempty"`
 	IP          []string `json:"ip,omitempty" bson:"ip,omitempty"`
@@ -130,6 +132,7 @@ func NewConfig(user User) Config {
 			},
 		},
 		Inbounds: []Inbound{
+
 			createVmessInbound(vmessPort, "tcp", user),
 			createVmessInbound(vmessPort, "kcp", user),
 		},
@@ -158,7 +161,7 @@ func NewConfig(user User) Config {
 					},
 				},
 			},
-			Rules: []RoutingRules{
+			Rules: []RoutingRule{
 				{
 					Type:        "field",
 					IP:          []string{"geoip:private"},
@@ -177,7 +180,7 @@ func NewConfig(user User) Config {
 }
 
 func (c *Config) appendVmessAllRules() {
-	rules := []RoutingRules{
+	rules := []RoutingRule{
 		{
 			Type:        "field",
 			InboundTag:  []string{"vmess-tcp-all"},
@@ -190,6 +193,20 @@ func (c *Config) appendVmessAllRules() {
 		},
 	}
 	c.Routing.Rules = append(c.Routing.Rules, rules...)
+}
+
+func (c *Config) appendLocalHTTPRule() {
+	c.Inbounds = append(c.Inbounds, Inbound{
+		Tag:      "localIn",
+		Listen:   "127.0.0.1",
+		Port:     localHTTPPort,
+		Protocol: "http",
+	})
+	c.Routing.Rules = append(c.Routing.Rules, RoutingRule{
+		Type:        "field",
+		InboundTag:  []string{"localIn"},
+		BalancerTag: "vmess-tcp-all",
+	})
 }
 
 func createKCPConfig() StreamConfig {
@@ -261,6 +278,7 @@ func defaultServerConfig(user User) Config {
 	}
 	config.Outbounds = append(config.Outbounds, outbounds...)
 	config.appendVmessAllRules()
+	config.appendLocalHTTPRule()
 	return config
 }
 
@@ -283,14 +301,14 @@ func defaultTunnelConfig(vpses []vps, user User) Config {
 	}
 	config.Outbounds = append(config.Outbounds, outbounds...)
 	config.Routing.Rules = append(config.Routing.Rules,
-		RoutingRules{
+		RoutingRule{
 			Type: "field",
 			IP: []string{
 				"geoip:cn",
 			},
 			OutboundTag: "freedom",
 		},
-		RoutingRules{
+		RoutingRule{
 			Type: "field",
 			Domain: []string{
 				"geosite:cn",
@@ -309,10 +327,11 @@ func defaultTunnelConfig(vpses []vps, user User) Config {
 	})
 
 	config.appendVmessAllRules()
+	config.appendLocalHTTPRule()
 	return config
 }
 
-func createRouting(network, location string) (RoutingBalancer, RoutingRules) {
+func createRouting(network, location string) (RoutingBalancer, RoutingRule) {
 	prefix := fmt.Sprintf("vmess-%v-%v-", network, location)
 	balancer := RoutingBalancer{
 		Tag: prefix + "all",
@@ -320,7 +339,7 @@ func createRouting(network, location string) (RoutingBalancer, RoutingRules) {
 			prefix,
 		},
 	}
-	rule := RoutingRules{
+	rule := RoutingRule{
 		Type: "field",
 		IP: []string{
 			"geoip:" + location,
