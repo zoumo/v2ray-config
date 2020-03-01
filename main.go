@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	vmessPort     = 443
+	tcePort       = 8081
+	kcpPort       = 28081
 	localHTTPPort = 1087
 )
 
@@ -132,9 +133,8 @@ func NewConfig(user User) Config {
 			},
 		},
 		Inbounds: []Inbound{
-
-			createVmessInbound(vmessPort, "tcp", user),
-			createVmessInbound(vmessPort, "kcp", user),
+			createVmessInbound(tcePort, "tcp", user),
+			createVmessInbound(kcpPort, "kcp", user),
 		},
 		Outbounds: []Outbound{
 			{
@@ -220,7 +220,7 @@ func createKCPConfig() StreamConfig {
 			Congestion:      true,
 			ReadBufferSize:  2,
 			WriteBufferSize: 2,
-			HeaderConfig:    json.RawMessage(`{"type": "none"}`),
+			HeaderConfig:    json.RawMessage(`{"type": "wechat-video"}`),
 		},
 	}
 }
@@ -291,7 +291,7 @@ func defaultTunnelConfig(vpses []vps, user User) Config {
 		locs.Add(vps.Location)
 		vnext := OutboundSettingsVnext{
 			Address: vps.IP,
-			Port:    vmessPort,
+			Port:    tcePort,
 			Users:   []User{user},
 		}
 		outbounds = append(outbounds,
@@ -390,10 +390,10 @@ func generateSubscribe(vpses []vps, user User) []byte {
 	// vmess://{"port":"443","ps":"aliyun","tls":"none","id":"b2a40065-715c-4eca-a691-6c7b10f4c45e","aid":"4","v":"2","host":"","type":"none","path":"","net":"tcp","add":"115.28.241.43"}
 	// vmess://{"port":"443","ps":"aliyun-kcp","tls":"none","id":"b2a40065-715c-4eca-a691-6c7b10f4c45e","aid":"4","v":"2","host":"","type":"none","path":"","net":"kcp","add":"115.28.241.43"}
 
-	createURL := func(vps vps, net string) vmessURL {
+	createURL := func(vps vps, net string, port int) vmessURL {
 		return vmessURL{
 			Add:  vps.IP,
-			Port: strconv.Itoa(vmessPort),
+			Port: strconv.Itoa(port),
 			Net:  net,
 			PS:   fmt.Sprintf("%v-%v-%v", vps.Cloud, vps.Location, net),
 			V:    "2",
@@ -405,12 +405,12 @@ func generateSubscribe(vpses []vps, user User) []byte {
 	}
 	urls := []string{}
 	for _, vps := range vpses {
-		url := createURL(vps, "tcp")
+		url := createURL(vps, "tcp", tcePort)
 		jsonByte, _ := json.Marshal(url)
 		jsonStr := base64.StdEncoding.EncodeToString(jsonByte)
 		urls = append(urls, "vmess://"+jsonStr)
 
-		url = createURL(vps, "kcp")
+		url = createURL(vps, "kcp", kcpPort)
 		jsonByte, _ = json.Marshal(url)
 		jsonStr = base64.StdEncoding.EncodeToString(jsonByte)
 		urls = append(urls, "vmess://"+jsonStr)
