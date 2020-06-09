@@ -10,209 +10,50 @@ import (
 	"strings"
 
 	"github.com/zoumo/goset"
+	"github.com/zoumo/v2ray/api"
+)
+
+var (
+	vmessNetPort = map[string]int{
+		// api.NetworkHTTP:      20000,
+		api.NetworkWebsocket: 22000,
+	}
+	domains = []string{"zoumo.buzz", "us.zoumo.buzz"}
 )
 
 const (
-	tcePort       = 8081
-	kcpPort       = 28081
-	localHTTPPort = 1087
+	tunnelVmessH2Port = 443
+	localHTTPPort     = 1087
+
+	queryPath = "/test"
 )
 
-// Config ...
-type Config struct {
-	Log       Log        `json:"log"`
-	States    States     `json:"states"`
-	Policy    Policy     `json:"policy"`
-	Inbounds  []Inbound  `json:"inbounds"`
-	Outbounds []Outbound `json:"outbounds"`
-	Routing   Routing    `json:"routing"`
-}
-type Log struct {
-	Access   string `json:"access"`
-	Error    string `json:"error"`
-	Loglevel string `json:"loglevel"`
-}
-
-type States struct{}
-
-type Policy struct {
-	System SystemPolicy `json:"system,omitempty" bson:"system,omitempty"`
-}
-
-type SystemPolicy struct {
-	StatsInboundUplink   bool `json:"statsInboundUplink,omitempty" bson:"statsInboundUplink,omitempty"`
-	StatsInboundDownlink bool `json:"statsInboundDownlink,omitempty" bson:"statsInboundDownlink,omitempty"`
-}
-
-type Inbound struct {
-	Listen         string          `json:"listen,omitempty" bson:"listen,omitempty"`
-	Protocol       string          `json:"protocol,omitempty" bson:"protocol,omitempty"`
-	Port           int             `json:"port,omitempty" bson:"port,omitempty"`
-	Tag            string          `json:"tag,omitempty" bson:"tag,omitempty"`
-	Settings       InboundSettings `json:"settings,omitempty" bson:"settings,omitempty"`
-	StreamSettings StreamConfig    `json:"streamSettings,omitempty" bson:"streamSetting,omitempty"`
-}
-
-type InboundSettings struct {
-	Clients                   []User `json:"clients,omitempty"`
-	DisableInsecureEncryption bool   `json:"disableInsecureEncryption,omitempty"`
-}
-
-type User struct {
-	ID       string `json:"id,omitempty" bson:"id,omitempty"`
-	Level    int    `json:"level,omitempty" bson:"level,omitempty"`
-	AlterID  int    `json:"alterId,omitempty" bson:"alterID,omitempty"`
-	Security string `json:"security,omitempty" bson:"security,omitempty"`
-}
-
-type Outbound struct {
-	Tag            string           `json:"tag,omitempty" bson:"tag,omitempty"`
-	Protocol       string           `json:"protocol,omitempty" bson:"protocol,omitempty"`
-	Settings       OutboundSettings `json:"settings,omitempty" bson:"settings,omitempty"`
-	StreamSettings StreamConfig     `json:"streamSettings,omitempty" bson:"streamSettings,omitempty"`
-}
-
-type OutboundSettings struct {
-	OutboundSettingsVnext []OutboundSettingsVnext `json:"vnext,omitempty"`
-}
-
-type OutboundSettingsVnext struct {
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-	Users   []User `json:"users"`
-}
-
-type StreamConfig struct {
-	Network     string     `json:"network,omitempty" bson:"network,omitempty"`
-	KCPSettings *KCPConfig `json:"kcpSettings,omitempty" bson:"kcpSettings,omitempty"`
-}
-
-type KCPConfig struct {
-	Mtu             uint32          `json:"mtu,omitempty" bson:"mtu,omitempty"`
-	Tti             uint32          `json:"tti,omitempty" bson:"tti,omitempty"`
-	UpCap           uint32          `json:"uplinkCapacity,omitempty" bson:"upCap,omitempty"`
-	DownCap         uint32          `json:"downlinkCapacity,omitempty" bson:"downCap,omitempty"`
-	Congestion      bool            `json:"congestion,omitempty" bson:"congestion,omitempty"`
-	ReadBufferSize  uint32          `json:"readBufferSize,omitempty" bson:"readBufferSize,omitempty"`
-	WriteBufferSize uint32          `json:"writeBufferSize,omitempty" bson:"writeBufferSize,omitempty"`
-	HeaderConfig    json.RawMessage `json:"header,omitempty" bson:"headerConfig,omitempty"`
-}
-
-type Routing struct {
-	Rules     []RoutingRule     `json:"rules"`
-	Balancers []RoutingBalancer `json:"balancers"`
-}
-
-type RoutingRule struct {
-	Type        string   `json:"type,omitempty" bson:"type,omitempty"`
-	Network     string   `json:"network,omitempty" bson:"network,omitempty"`
-	IP          []string `json:"ip,omitempty" bson:"ip,omitempty"`
-	Domain      []string `json:"domain,omitempty" bson:"domain,omitempty"`
-	InboundTag  []string `json:"inboundTag,omitempty" bson:"inboundTag,omitempty"`
-	BalancerTag string   `json:"balancerTag,omitempty" bson:"balancerTag,omitempty"`
-	OutboundTag string   `json:"outboundTag,omitempty" bson:"outboundTag,omitempty"`
-}
-
-type RoutingBalancer struct {
-	Tag      string   `json:"tag"`
-	Selector []string `json:"selector"`
-}
-
-func NewConfig(user User) Config {
-	return Config{
-		Log: Log{
-			Access:   "/var/log/v2ray/access.log",
-			Error:    "/var/log/v2ray/error.log",
-			Loglevel: "warning",
+func createHTTPConfig() api.StreamConfig {
+	return api.StreamConfig{
+		Network:  api.NetworkHTTP,
+		Security: "tls",
+		HTTPSettings: &api.HTTPSettings{
+			Path: queryPath,
 		},
-		States: States{},
-		Policy: Policy{
-			System: SystemPolicy{
-				StatsInboundUplink:   true,
-				StatsInboundDownlink: true,
-			},
-		},
-		Inbounds: []Inbound{
-			createVmessInbound(tcePort, "tcp", user),
-			createVmessInbound(kcpPort, "kcp", user),
-		},
-		Outbounds: []Outbound{
-			{
-				Tag:      "blocked",
-				Protocol: "blackhole",
-			},
-			{
-				Tag:      "freedom",
-				Protocol: "freedom",
-			},
-		},
-		Routing: Routing{
-			Balancers: []RoutingBalancer{
-				{
-					Tag: "vmess-tcp-all",
-					Selector: []string{
-						"vmess-tcp-",
-					},
-				},
-				{
-					Tag: "vmess-kcp-all",
-					Selector: []string{
-						"vmess-kcp-",
-					},
-				},
-			},
-			Rules: []RoutingRule{
-				{
-					Type:        "field",
-					IP:          []string{"geoip:private"},
-					OutboundTag: "blocked",
-				},
-				{
-					Type: "field",
-					Domain: []string{
-						"geosite:category-ads-all",
-					},
-					OutboundTag: "blocked",
-				},
-			},
+		TLSSettings: &api.TLSSettings{
+			AllowInsecure: true,
 		},
 	}
 }
 
-func (c *Config) appendVmessAllRules() {
-	rules := []RoutingRule{
-		{
-			Type:        "field",
-			InboundTag:  []string{"vmess-tcp-all"},
-			BalancerTag: "vmess-tcp-all",
-		},
-		{
-			Type:        "field",
-			InboundTag:  []string{"vmess-kcp-all"},
-			BalancerTag: "vmess-kcp-all",
+func createWSConfig() api.StreamConfig {
+	return api.StreamConfig{
+		Network: api.NetworkWebsocket,
+		WSSettings: &api.WSSettings{
+			Path: queryPath,
 		},
 	}
-	c.Routing.Rules = append(c.Routing.Rules, rules...)
 }
 
-func (c *Config) appendLocalHTTPRule() {
-	c.Inbounds = append(c.Inbounds, Inbound{
-		Tag:      "localIn",
-		Listen:   "127.0.0.1",
-		Port:     localHTTPPort,
-		Protocol: "http",
-	})
-	c.Routing.Rules = append(c.Routing.Rules, RoutingRule{
-		Type:        "field",
-		InboundTag:  []string{"localIn"},
-		BalancerTag: "vmess-tcp-all",
-	})
-}
-
-func createKCPConfig() StreamConfig {
-	return StreamConfig{
-		Network: "kcp",
-		KCPSettings: &KCPConfig{
+func createKCPConfig() api.StreamConfig {
+	return api.StreamConfig{
+		Network: api.NetworkKCP,
+		KCPSettings: &api.KCPSettings{
 			Mtu:             1350,
 			Tti:             20,
 			UpCap:           20,
@@ -225,121 +66,129 @@ func createKCPConfig() StreamConfig {
 	}
 }
 
-func createVmessInbound(port int, network string, user User) Inbound {
+func createVmessInbound(port int, network string, user api.User) api.Inbound {
 	user.Security = ""
-	tag := fmt.Sprintf("vmess-%v-all", network)
-	inbound := Inbound{
-		Tag:      tag,
+	inbound := api.Inbound{
+		Listen:   "127.0.0.1",
+		Tag:      api.VmessTag(network, "all"),
 		Port:     port,
 		Protocol: "vmess",
-		Settings: InboundSettings{
-			Clients: []User{
-				user,
-			},
-			DisableInsecureEncryption: true,
-		},
 	}
-	if network == "kcp" {
+	switch network {
+	case api.NetworkHTTP:
+		inbound.StreamSettings = createHTTPConfig()
+	case api.NetworkWebsocket:
+		inbound.StreamSettings = createWSConfig()
+	case api.NetworkKCP:
 		inbound.StreamSettings = createKCPConfig()
 	}
 
 	return inbound
 }
 
-func createVmessOutboundLocation(loc string, index int, network string, vnext OutboundSettingsVnext) Outbound {
-	tag := fmt.Sprintf("vmess-%v-%v-%v", network, loc, index)
-
-	outbound := Outbound{
-		Tag:      tag,
+func createVmessOutboundLocation(loc string, index int, network string, vnext api.OutboundSettingsVnext) api.Outbound {
+	outbound := api.Outbound{
+		Tag:      api.VmessTag(network, loc, index),
 		Protocol: "vmess",
-		Settings: OutboundSettings{
-			OutboundSettingsVnext: []OutboundSettingsVnext{vnext},
+		Settings: api.OutboundSettings{
+			OutboundSettingsVnext: []api.OutboundSettingsVnext{vnext},
 		},
 	}
 
-	if network == "kcp" {
+	switch network {
+	case api.NetworkHTTP:
+		outbound.StreamSettings = createHTTPConfig()
+	case api.NetworkWebsocket:
+		outbound.StreamSettings = createWSConfig()
+	case api.NetworkKCP:
 		outbound.StreamSettings = createKCPConfig()
 	}
 
 	return outbound
 }
 
-func defaultServerConfig(user User) Config {
-	config := NewConfig(user)
-	outbounds := []Outbound{
-		{
-			Tag:      "vmess-tcp-all",
-			Protocol: "freedom",
-		},
-		{
-			Tag:      "vmess-kcp-all",
-			Protocol: "freedom",
-		},
+func newDefaultServerConfig(user api.User) api.Config {
+	config := api.NewDefaultConfig(user)
+
+	// add inbounds
+	// config.Inbounds = append(config.Inbounds, createVmessInbound(vmessH2Port, api.NetworkHTTP, user))
+	for net, port := range vmessNetPort {
+		config.Inbounds = append(config.Inbounds, createVmessInbound(port, net, user))
 	}
-	config.Outbounds = append(config.Outbounds, outbounds...)
-	config.appendVmessAllRules()
-	config.appendLocalHTTPRule()
+	// add outbounds
+	for _, network := range config.InboundVmessNetworks().ToStrings() {
+		config.Outbounds = append(config.Outbounds, api.Outbound{
+			Tag:      fmt.Sprintf("vmess-%v-all", network),
+			Protocol: "freedom",
+		})
+	}
+	config.Fillin()
 	return config
 }
 
-func defaultTunnelConfig(vpses []vps, user User) Config {
-	config := NewConfig(user)
-
-	outbounds := make([]Outbound, 0)
+func newDefaultTunnelConfig(vpses []vps, user api.User) api.Config {
+	config := api.NewDefaultConfig(user)
+	// add inbounds
+	for net, port := range vmessNetPort {
+		config.Inbounds = append(config.Inbounds, createVmessInbound(port, net, user))
+	}
+	// add outbounds
+	outbounds := make([]api.Outbound, 0)
 	locs := goset.NewSet()
+
 	for i, vps := range vpses {
 		locs.Add(vps.Location)
-		vnext := OutboundSettingsVnext{
+		vnext := api.OutboundSettingsVnext{
 			Address: vps.IP,
-			Port:    tcePort,
-			Users:   []User{user},
+			Port:    tunnelVmessH2Port,
+			Users:   []api.User{user},
 		}
-		outbounds = append(outbounds,
-			createVmessOutboundLocation(vps.Location, i, "tcp", vnext),
-			createVmessOutboundLocation(vps.Location, i, "kcp", vnext),
-		)
+		for _, network := range config.InboundVmessNetworks().ToStrings() {
+			outbounds = append(outbounds,
+				createVmessOutboundLocation(vps.Location, i, network, vnext),
+			)
+		}
+
 	}
 	config.Outbounds = append(config.Outbounds, outbounds...)
-	config.Routing.Rules = append(config.Routing.Rules,
-		RoutingRule{
-			Type: "field",
-			IP: []string{
-				"geoip:cn",
-			},
+
+	// add loc roles
+	config.Routing.Rules = append(config.Routing.Rules, []api.RoutingRule{
+		{
+			Type:        "field",
+			IP:          []string{"geoip:cn"},
 			OutboundTag: "freedom",
 		},
-		RoutingRule{
-			Type: "field",
-			Domain: []string{
-				"geosite:cn",
-			},
+		{
+			Type:        "field",
+			Domain:      []string{"geosite:cn"},
 			OutboundTag: "freedom",
 		},
-	)
+	}...)
 
 	locs.Range(func(i int, elem interface{}) bool {
 		loc := elem.(string)
-		tcpB, tcpR := createRouting("tcp", loc)
-		kcpB, kcpR := createRouting("kcp", loc)
-		config.Routing.Balancers = append(config.Routing.Balancers, tcpB, kcpB)
-		config.Routing.Rules = append(config.Routing.Rules, tcpR, kcpR)
+		for _, network := range config.InboundVmessNetworks().ToStrings() {
+			networkB, networkR := createRouting(network, loc)
+			config.Routing.Balancers = append(config.Routing.Balancers, networkB)
+			config.Routing.Rules = append(config.Routing.Rules, networkR)
+		}
 		return true
 	})
 
-	config.appendVmessAllRules()
-	config.appendLocalHTTPRule()
+	config.Fillin()
 	return config
 }
 
-func createRouting(network, location string) (RoutingBalancer, RoutingRule) {
+func createRouting(network, location string) (api.RoutingBalancer, api.RoutingRule) {
 	prefix := fmt.Sprintf("vmess-%v-%v-", network, location)
-	balancer := RoutingBalancer{
+	balancer := api.RoutingBalancer{
 		Tag: prefix + "all",
 		Selector: []string{
 			prefix,
 		},
 	}
-	rule := RoutingRule{
+	rule := api.RoutingRule{
 		Type: "field",
 		IP: []string{
 			"geoip:" + location,
@@ -363,8 +212,8 @@ type vps struct {
 	Cloud    string `json:"cloud,omitempty" bson:"cloud,omitempty"`
 }
 
-func (c *config) buildUser() User {
-	return User{
+func (c *config) buildUser() api.User {
+	return api.User{
 		ID:       c.User,
 		Level:    1,
 		AlterID:  64,
@@ -372,50 +221,28 @@ func (c *config) buildUser() User {
 	}
 }
 
-type vmessURL struct {
-	V    string `json:"v"`
-	Add  string `json:"add"`
-	Port string `json:"port"`
-	PS   string `json:"ps"`
-	Net  string `json:"net"`
-	ID   string `json:"id"`
-	AID  string `json:"aid"`
-	TlS  string `json:"tls"`
-	Host string `json:"host"`
-	Type string `json:"type"`
-	Path string `json:"path"`
-}
-
-func generateSubscribe(vpses []vps, user User) []byte {
-	// vmess://{"port":"443","ps":"aliyun","tls":"none","id":"b2a40065-715c-4eca-a691-6c7b10f4c45e","aid":"4","v":"2","host":"","type":"none","path":"","net":"tcp","add":"115.28.241.43"}
-	// vmess://{"port":"443","ps":"aliyun-kcp","tls":"none","id":"b2a40065-715c-4eca-a691-6c7b10f4c45e","aid":"4","v":"2","host":"","type":"none","path":"","net":"kcp","add":"115.28.241.43"}
-
-	createURL := func(vps vps, net string, port int) vmessURL {
-		return vmessURL{
-			Add:  vps.IP,
-			Port: strconv.Itoa(port),
-			Net:  net,
-			PS:   fmt.Sprintf("%v-%v-%v", vps.Cloud, vps.Location, net),
+func createSubscribe(user api.User) []byte {
+	createUrl := func(domain, network, path string) api.VmessURL {
+		return api.VmessURL{
+			Add:  domain,
+			Port: strconv.Itoa(443),
+			Net:  network,
+			PS:   domain,
 			V:    "2",
 			ID:   user.ID,
 			Type: "none",
 			AID:  "4",
-			TlS:  "none",
+			TlS:  "tls",
+			Path: path,
 		}
 	}
-	urls := []string{}
-	for _, vps := range vpses {
-		url := createURL(vps, "tcp", tcePort)
-		jsonByte, _ := json.Marshal(url)
-		jsonStr := base64.StdEncoding.EncodeToString(jsonByte)
-		urls = append(urls, "vmess://"+jsonStr)
-
-		url = createURL(vps, "kcp", kcpPort)
-		jsonByte, _ = json.Marshal(url)
-		jsonStr = base64.StdEncoding.EncodeToString(jsonByte)
-		urls = append(urls, "vmess://"+jsonStr)
+	var urls []string
+	for _, domain := range domains {
+		for net := range vmessNetPort {
+			url := createUrl(domain, net, queryPath)
+			urls = append(urls, url.URL())
+		}
 	}
-
 	all := []byte(strings.Join(urls, "\n"))
 	return []byte(base64.StdEncoding.EncodeToString(all))
 }
@@ -432,12 +259,12 @@ func main() {
 	json.Unmarshal(file, &userConfig)
 	user := userConfig.buildUser()
 
-	config := defaultServerConfig(user)
+	config := newDefaultServerConfig(user)
 	filename := "./output/config-server.json"
 	j, _ := json.MarshalIndent(config, "", "  ")
 	ioutil.WriteFile(filename, j, 0755)
 
-	config = defaultTunnelConfig(userConfig.Vpses, user)
+	config = newDefaultTunnelConfig(userConfig.Vpses, user)
 	filename = "./output/config-tunnel.json"
 	j, _ = json.MarshalIndent(config, "", "  ")
 	ioutil.WriteFile(filename, j, 0755)
@@ -445,7 +272,7 @@ func main() {
 	vpses := []vps{}
 	vpses = append(vpses, userConfig.Tunnels...)
 	vpses = append(vpses, userConfig.Vpses...)
-	subscribe := generateSubscribe(vpses, user)
+	subscribe := createSubscribe(user)
 	filename = "./output/subscirbe.txt"
 	ioutil.WriteFile(filename, subscribe, 0755)
 }
