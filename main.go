@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -18,7 +17,7 @@ var (
 		// api.NetworkHTTP:      20000,
 		api.NetworkWebsocket: 22000,
 	}
-	domains = []string{"zoumo.buzz", "us.zoumo.buzz"}
+	domains = []string{"jp.zoumo.buzz", "us.zoumo.buzz", "streaming.zoumo.buzz"}
 )
 
 const (
@@ -244,7 +243,8 @@ func createSubscribe(user api.User) []byte {
 		}
 	}
 	all := []byte(strings.Join(urls, "\n"))
-	return []byte(base64.StdEncoding.EncodeToString(all))
+	return all
+	// return []byte(base64.StdEncoding.EncodeToString(all))
 }
 
 func main() {
