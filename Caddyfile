@@ -1,0 +1,30 @@
+{
+    local_certs
+}
+
+zoumo.buzz, *.zoumo.buzz {
+    log {
+        output file /etc/caddy/caddy.log
+    }
+    tls {
+        protocols tls1.2 tls1.3
+        ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        curves x25519
+    }
+    @v2ray_websocket {
+        path /test
+        header Connection Upgrade
+        header Upgrade websocket
+    }
+
+    @not_v2ray {
+        not {
+            path /test
+            header Connection Upgrade
+           header Upgrade websocket
+        }
+    }
+
+    respond @not_v2ray 404
+    reverse_proxy @v2ray_websocket localhost:22000
+}
